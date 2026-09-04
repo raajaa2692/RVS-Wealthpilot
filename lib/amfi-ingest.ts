@@ -25,9 +25,10 @@ export function parseAmfi(text:string): RawFund[] {
   for (const raw of text.split(/\r?\n/)) {
     const line = raw.trim(); if (!line) continue
     const p = line.split(';').map(x=>x.trim())
-    if (p.length >= 6 && /^\d+$/.test(p[0])) {
-      const nav = Number(p[4]); if (!Number.isFinite(nav) || nav <= 0) continue
-      out.push({schemeCode:p[0], isin:p[1]||'', isinReinvestment:p[2]||'', schemeName:p[3], nav, navDate:p[5], amc, category:classify(category,p[3])})
+    // AMFI NAVAll.txt format: Scheme Code;ISIN Payout/Growth;ISIN Reinvestment;Scheme Name;Plan;Option;NAV;Date
+    if (p.length >= 8 && /^\d+$/.test(p[0])) {
+      const nav = Number(p[6]); if (!Number.isFinite(nav) || nav <= 0) continue
+      out.push({schemeCode:p[0], isin:p[1]||'', isinReinvestment:p[2]||'', schemeName:p[3], nav, navDate:p[7], amc, category:classify(category,p[3])})
     } else if (p.length === 1) {
       if (/Mutual Fund$/i.test(p[0])) amc = p[0]
       else if (/Scheme|Fund|ETF|Index|Debt|Equity|Hybrid|Solution|Thematic|Gold|Liquid|Overnight|Money Market|Arbitrage|FoF|ELSS/i.test(p[0])) category = p[0]
