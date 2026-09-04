@@ -1,0 +1,5 @@
+{
+  "crons": [
+    { "path": "/api/ingest/amfi", "schedule": "15 3 * * *" }
+  ]
+}

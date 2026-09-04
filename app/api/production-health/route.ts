@@ -1,12 +1,14 @@
-import {NextResponse} from 'next/server'
+import { NextResponse } from 'next/server'
+import { query } from '@/lib/db'
+export const dynamic='force-dynamic'
 export async function GET(){
- const checks=[
-  {name:'NAV provider',status:process.env.AMFI_DATA_URL?'configured':'needs configuration'},
-  {name:'Database',status:process.env.DATABASE_URL?'configured':'needs configuration'},
-  {name:'Authentication',status:process.env.AUTH_SECRET?'configured':'needs configuration'},
-  {name:'Encryption key',status:process.env.ENCRYPTION_KEY?'configured':'needs configuration'},
-  {name:'Notifications',status:process.env.NOTIFICATION_PROVIDER?'configured':'needs configuration'},
-  {name:'Market data',status:process.env.MARKET_DATA_URL?'configured':'needs configuration'}
- ]
- return NextResponse.json({environment:process.env.NODE_ENV||'development',checks})
+ try{
+  const [funds,navs,analytics,runs]=await Promise.all([
+   query<{n:number}>(`SELECT count(*)::int AS n FROM fund_schemes`),
+   query<{n:number}>(`SELECT count(*)::int AS n FROM nav_observations`),
+   query<{n:number;latest:string|null}>(`SELECT count(*)::int AS n,max(snapshot_date)::text AS latest FROM fund_analytics_daily`),
+   query<any>(`SELECT source,status,started_at,finished_at,records_seen,records_upserted FROM ingestion_runs ORDER BY started_at DESC LIMIT 1`)
+  ])
+  return NextResponse.json({status:'healthy',database:'ok',funds:funds.rows[0].n,navObservations:navs.rows[0].n,analyticsSnapshots:analytics.rows[0].n,latestAnalyticsDate:analytics.rows[0].latest,lastIngestion:runs.rows[0]||null,at:new Date().toISOString()})
+ }catch(e){return NextResponse.json({status:'degraded',database:'unavailable',message:e instanceof Error?e.message:'Database unavailable',at:new Date().toISOString()},{status:503})}
 }
