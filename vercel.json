@@ -1,5 +1,6 @@
 {
   "crons": [
-    { "path": "/api/ingest/amfi", "schedule": "15 3 * * *" }
+    { "path": "/api/ingest/amfi", "schedule": "15 3 * * *" },
+    { "path": "/api/analytics/snapshot", "schedule": "45 * * * *" }
   ]
 }
