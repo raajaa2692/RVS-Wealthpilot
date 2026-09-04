@@ -228,7 +228,7 @@ function AIFundManager({aiQuestion,setAiQuestion,aiCategory,setAiCategory,aiView
 }
 
 function FundComparison({funds,analytics}:{funds:any[];analytics:any[]}){
- const metric=(a:any,key:string)=>a?.returns?.[key]
+ const metric=(a:any,key:string|number)=>a?.returns?.[key]
  const vals=(key:string)=>analytics.map(a=>metric(a,key)).filter((v:any)=>typeof v==='number'&&Number.isFinite(v))
  const avg=(key:string)=>{const v=vals(key);return v.length?v.reduce((x,y)=>x+y,0)/v.length:null}
  const score=(i:number)=>{
@@ -240,7 +240,7 @@ function FundComparison({funds,analytics}:{funds:any[];analytics:any[]}){
    return Math.max(0,Math.min(100,Math.round(score)))
  }
  const s0=score(0),s1=score(1),winner=s0===s1?null:s0>s1?0:1
- const row=(label:string,key:string)=>{const a=metric(analytics[0],key),b=metric(analytics[1],key);return <div className="compareRow"><span>{label}</span><b className={winner===0?'winner':''}>{a!=null?a.toFixed(2)+'%':'—'}</b><b className={winner===1?'winner':''}>{b!=null?b.toFixed(2)+'%':'—'}</b></div>}
+ const row=(label:string,key:string|number)=>{const a=metric(analytics[0],key),b=metric(analytics[1],key);return <div className="compareRow"><span>{label}</span><b className={winner===0?'winner':''}>{a!=null?a.toFixed(2)+'%':'—'}</b><b className={winner===1?'winner':''}>{b!=null?b.toFixed(2)+'%':'—'}</b></div>}
  return <div className="comparePanel"><div className="compareHeader"><div><span className="pill green">Fund Compare</span><h3>WealthPilot research score</h3><p>Transparent comparison using only validated metrics currently available. This is a research signal, not a recommendation.</p></div></div><div className="compareGrid"><div className="compareFundHead"><small>Fund A</small><b>{funds[0].name}</b><strong>{s0}/100</strong></div><div className="compareFundHead"><small>Fund B</small><b>{funds[1].name}</b><strong>{s1}/100</strong></div></div><div className="compareTable"><div className="compareRow head"><span>Metric</span><b>{funds[0].name.replace(/\\s+-\\s+(Direct|Regular) Plan.*$/i,'')}</b><b>{funds[1].name.replace(/\\s+-\\s+(Direct|Regular) Plan.*$/i,'')}</b></div>{row('5Y CAGR',5)}{row('7Y CAGR',7)}{row('10Y CAGR',10)}<div className="compareRow"><span>Direct TER</span><b className={winner===0?'winner':''}>{analytics[0]?.ter?.direct!=null?analytics[0].ter.direct.toFixed(2)+'%':'—'}</b><b className={winner===1?'winner':''}>{analytics[1]?.ter?.direct!=null?analytics[1].ter.direct.toFixed(2)+'%':'—'}</b></div><div className="compareRow"><span>Benchmark</span><b>{analytics[0]?.benchmark||'Not linked'}</b><b>{analytics[1]?.benchmark||'Not linked'}</b></div><div className="compareRow"><span>Risk-o-meter</span><b>{analytics[0]?.risk||'Not linked'}</b><b>{analytics[1]?.risk||'Not linked'}</b></div></div><div className="compareInsight"><b>{winner===null?'No clear winner from available data':`Research signal: ${funds[winner].name}`}</b><span>{winner===null?'The currently validated metrics do not create a meaningful separation. Compare the funds on goal, risk, portfolio role and official scheme disclosures.':'The higher score reflects the currently available validated long-term return metrics and, where available, lower Direct TER. It does not predict future performance.'}</span></div></div>
 }
 
