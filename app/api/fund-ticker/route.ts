@@ -66,7 +66,7 @@ function pickFunds(all:FundRow[]){
 
 export async function GET(){
   try{
-    const dbRows=await query<any>(`SELECT scheme_code AS code, scheme_name AS name, category, nav, previous_nav AS "previousNav", daily_return_pct AS "changePct", snapshot_date AS "navDate" FROM latest_fund_analytics WHERE daily_return_pct IS NOT NULL ORDER BY ABS(daily_return_pct) DESC NULLS LAST LIMIT 12`)
+   const dbRows=await query<any>(`SELECT scheme_code AS code, scheme_name AS name, category, nav, previous_nav AS "previousNav", daily_return_pct AS "changePct", snapshot_date AS "navDate" FROM latest_fund_analytics WHERE daily_return_pct IS NOT NULL AND daily_return_pct BETWEEN -10 AND 10 AND category NOT ILIKE '%Close Ended%' AND scheme_name NOT ILIKE '%FMP%' AND scheme_name NOT ILIKE '%Fixed Term%' ORDER BY ABS(daily_return_pct) DESC NULLS LAST LIMIT 12`)
     if(dbRows.rowCount){
       const pulses=dbRows.rows.map(r=>({code:r.code,name:r.name,shortName:String(r.name).replace(/\s+-\s+(Direct|Regular) Plan.*$/i,'').replace(/\s+-\s+(Growth|IDCW).*$/i,''),category:r.category||'Mutual Fund',nav:Number(r.nav),previousNav:Number(r.previousNav),change:Number(r.nav)-Number(r.previousNav),changePct:Number(r.changePct),navDate:String(r.navDate),previousDate:''}))
       return NextResponse.json({status:'live',source:'RVS daily analytics snapshot (AMFI ingested)',asOf:pulses[0]?.navDate||new Date().toISOString().slice(0,10),count:pulses.length,pulses})

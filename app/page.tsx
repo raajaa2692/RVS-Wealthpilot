@@ -8,12 +8,12 @@ const funds=[['Parag Parikh Flexi Cap Fund','Flexi Cap','86','18.4%','Moderate']
 const chart=[10.2,10.6,10.4,11.1,11.8,12.4,12.1,13.2,14.1,14,15.3,16.1,17,18.4]
 const money=(n:number)=>`₹${Math.round(n).toLocaleString('en-IN')}`
 const cleanFundName=(name:string)=>name.replace(/\s*[-–—]\s*(Direct|Regular) Plan.*$/i,'').replace(/\s*[-–—]\s*(Growth|IDCW).*/i,'').trim()
-const analyticsForFund=(f:any,pulses:any[])=>{const pulse=pulses.find((p:any)=>String(p.code)===String(f.code)||cleanFundName(p.shortName||'').toLowerCase()===cleanFundName(f.name||'').toLowerCase());return {daily:pulse?.changePct??null,benchmark:null,risk:null,ter:null,returns:{y5:null,y7:null,y10:null}}}
+
 
 export default function Home(){
  const [active,setActive]=useState('Dashboard'),[period,setPeriod]=useState('1Y'),[liveRec,setLiveRec]=useState<any>(null),[loadingRec,setLoadingRec]=useState(false)
  const [profileOpen,setProfileOpen]=useState(false),[profile,setProfile]=useState({name:'Your name',email:'',mobile:'',photo:''}),[liveFunds,setLiveFunds]=useState<any[]>([]),[fundStatus,setFundStatus]=useState('Loading live AMFI data…'),[fundSearch,setFundSearch]=useState(''),[fundRefreshKey,setFundRefreshKey]=useState(0),[refreshingFunds,setRefreshingFunds]=useState(false)
- const [holdings,setHoldings]=useState(holdings0),[sips,setSips]=useState(sips0)
+const [holdings,setHoldings]=useState(holdings0),[sips,setSips]=useState(sips0),[fundAnalytics,setFundAnalytics]=useState<Record<string,any>>({})
  const [dailyPulse,setDailyPulse]=useState<any[]>([]),[pulseStatus,setPulseStatus]=useState('Loading daily NAV changes…')
  const [aiQuestion,setAiQuestion]=useState(''),[aiCategory,setAiCategory]=useState('Find a Fund'),[aiView,setAiView]=useState<any>(null)
  const [amount,setAmount]=useState(50000),[phone,setPhone]=useState(''),[saved,setSaved]=useState(false)
@@ -23,41 +23,138 @@ export default function Home(){
  const [investmentMode,setInvestmentMode]=useState<'monthly'|'lumpsum'>('monthly')
  const [projectionAmount,setProjectionAmount]=useState(5000)
  const [assumedReturn,setAssumedReturn]=useState(12)
- const totals=useMemo(()=>{let i=0,c=0;holdings.forEach(h=>{i+=h.invested;c+=h.current});return {i,c,g:c-i,p:i?(c-i)/i*100:0}},[holdings])
+ const analyticsForFund=(f:any,pulses:any[])=>{
+   const pulse=pulses.find((p:any)=>
+     String(p.code)===String(f.code) ||
+     cleanFundName(p.shortName||'').toLowerCase()===cleanFundName(f.name||'').toLowerCase()
+   )
+
+   const a=fundAnalytics[String(f.code)]
+
+   return {
+     daily:a?.dailyReturn??pulse?.changePct??null,
+     benchmark:a?.benchmark??null,
+     risk:a?.risk??null,
+     ter:a?.ter??{direct:null,regular:null},
+     returns:{
+       y5:a?.returns?.[5]??null,
+       y7:a?.returns?.[7]??null,
+       y10:a?.returns?.[10]??null
+     }
+   }
+ }
+const totals=useMemo(()=>{let i=0,c=0;holdings.forEach(h=>{i+=h.invested;c+=h.current});return {i,c,g:c-i,p:i?(c-i)/i*100:0}},[holdings])
  const allocation=useMemo(()=>buildDynamicAllocation(liveFunds,amount,plannerRisk,plannerHorizon,plannerGoal,allocationRefresh),[liveFunds,amount,plannerRisk,plannerHorizon,plannerGoal,allocationRefresh])
  useEffect(()=>{try{const p=JSON.parse(localStorage.getItem('rvs-profile')||'null');if(p)setProfile(p)}catch{}},[])
- useEffect(()=>{localStorage.setItem('rvs-profile',JSON.stringify(profile))},[profile])
- useEffect(()=>{
-   if(active!=='Dashboard') return
-   let cancelled=false
-   fetch('/api/fund-ticker',{cache:'no-store'}).then(r=>r.json()).then(d=>{
-     if(cancelled)return
-     setDailyPulse(d.pulses||[])
-     setPulseStatus(d.status==='live'&&d.pulses?.length?`Latest available NAV · ${d.asOf}`:'Daily NAV change is not available yet')
-   }).catch(()=>{if(!cancelled)setPulseStatus('Daily NAV change is not available yet')})
-   return()=>{cancelled=true}
- },[active])
- useEffect(()=>{
+useEffect(()=>{
   const t=setTimeout(async()=>{
     if(fundRefreshKey>0)setRefreshingFunds(true)
     try{
-      const r=await fetch('/api/funds?limit=1000',{cache:'no-store'})
+      const search=fundSearch.trim()
+      const params=new URLSearchParams({
+        limit:'80',
+        q:search
+      })
+
+      const r=await fetch(`/api/funds?${params.toString()}`,{cache:'no-store'})
       const d=await r.json()
+
       setLiveFunds(d.funds||[])
-      setFundStatus(d.status==='live'?`Live AMFI NAV · ${d.count} schemes loaded · ${d.asOfLabel}`:'AMFI connection unavailable — showing fallback data')
+      setFundStatus(
+        d.status==='live'
+          ? `Live AMFI NAV · ${d.count} schemes returned · ${d.asOfLabel}`
+          : 'AMFI connection unavailable — showing fallback data'
+      )
     }catch{
       setFundStatus('AMFI connection unavailable — showing fallback data')
     }finally{
       setRefreshingFunds(false)
     }
   },300)
+
   return()=>clearTimeout(t)
-},[fundRefreshKey])
+},[fundSearch,fundRefreshKey])
+useEffect(()=>{
+  const funds=liveFunds.slice(0,60)
+  if(!funds.length){
+    setFundAnalytics({})
+    return
+  }
+
+  let cancelled=false
+
+  async function loadAnalytics(){
+    const entries=await Promise.all(
+      funds.map(async(f:any)=>{
+        try{
+          const params=new URLSearchParams({
+            code:String(f.code),
+            name:f.name||''
+          })
+
+          const r=await fetch(`/api/fund-analytics?${params.toString()}`,{
+            cache:'no-store'
+          })
+
+          if(!r.ok)return [String(f.code),null]
+
+          const d=await r.json()
+          return [String(f.code),d]
+        }catch{
+          return [String(f.code),null]
+        }
+      })
+    )
+
+    if(!cancelled){
+      setFundAnalytics(Object.fromEntries(entries))
+    }
+  }
+
+  loadAnalytics()
+
+  return()=>{
+    cancelled=true
+  }
+},[liveFunds])
+
+useEffect(()=>{
+  let cancelled=false
+
+  async function loadDailyPulse(){
+    try{
+      const r=await fetch('/api/fund-ticker',{cache:'no-store'})
+      const d=await r.json()
+
+      if(cancelled)return
+
+      if(d.status==='live' && Array.isArray(d.pulses) && d.pulses.length){
+        setDailyPulse(d.pulses)
+        setPulseStatus(`${d.count} funds · latest NAV: ${d.asOf}`)
+      }else{
+        setDailyPulse([])
+        setPulseStatus('Latest NAV sample unavailable')
+      }
+    }catch{
+      if(!cancelled){
+        setDailyPulse([])
+        setPulseStatus('Latest NAV sample unavailable')
+      }
+    }
+  }
+
+  loadDailyPulse()
+
+  return()=>{
+    cancelled=true
+  }
+},[])
+
 function refreshFunds(){
   setFundStatus('Refreshing live AMFI data…')
   setFundRefreshKey(x=>x+1)
 }
- const filteredFunds=useMemo(()=>{const q=fundSearch.trim().toLowerCase();if(!q)return liveFunds;return liveFunds.filter(f=>`${f.name} ${f.amc} ${f.category} ${f.isin}`.toLowerCase().includes(q))},[liveFunds,fundSearch])
+ const filteredFunds=liveFunds
  const today=new Date().getDate()
  const next=useMemo(()=>sips.map(s=>({...s,days:s.day>=today?s.day-today:s.day+30-today})).sort((a,b)=>a.days-b.days)[0],[sips])
  async function getLiveRecommendation(){
@@ -71,9 +168,9 @@ function refreshFunds(){
  function accept(){setSips(s=>{const m=new Map(s.map(x=>[x.name,x]));allocation.filter(x=>x[0].includes('Fund')).forEach(x=>m.set(x[0],{name:x[0],amount:x[1],day:m.get(x[0])?.day||5}));return [...m.values()]});setSaved(true)}
  return <main>
  <aside className="sidebar"><div className="brand"><span>RVS</span><div><b>RVS WealthPilot</b><small>AI investing copilot</small></div></div>
- {['Dashboard','AI Fund Manager','My SIPs','SIP Planner','Fund Research','Market Intelligence'].map(x=><button className={active===x?'nav active':'nav'} onClick={()=>setActive(x)} key={x}>{x}</button>)}
- <div className="bottom">V13 · Public Beta</div></aside>
- <section className="content"><header><div><label>SEPTEMBER 2026</label><h1>{active}</h1><span className="v6tag">V13 · Public Beta · Live AMFI NAV</span></div><div className="accountWrap"><button className="profile" onClick={()=>setProfileOpen(v=>!v)}>{profile.photo?<img src={profile.photo} alt="Profile"/>:(profile.name||"RVS").split(" ").map(x=>x[0]).join("").slice(0,2).toUpperCase()}</button>{profileOpen&&<AccountPanel profile={profile} setProfile={setProfile} onClose={()=>setProfileOpen(false)}/>}</div></header>
+{['Dashboard','AI Fund Manager','My SIPs','SIP Planner','Fund Research','Market Intelligence'].map(x=><button className={active===x?'nav active':'nav'} onClick={()=>setActive(x)} key={x}>{x}</button>)}
+ <div className="bottom">V14 - Public Beta</div></aside>
+ <section className="content"><header><div><label>SEPTEMBER 2026</label><h1>{active}</h1><span className="v6tag">V14 - Public Beta - Live AMFI NAV</span></div><div className="accountWrap"><button className="profile" onClick={()=>setProfileOpen(v=>!v)}>{profile.photo?<img src={profile.photo} alt="Profile"/>:(profile.name||"RVS").split(" ").map(x=>x[0]).join("").slice(0,2).toUpperCase()}</button>{profileOpen&&<AccountPanel profile={profile} setProfile={setProfile} onClose={()=>setProfileOpen(false)}/>}</div></header>
 
  <div className="betaBanner"><span className="betaDot">●</span><div><b>RVS WealthPilot · Public Beta</b><small>Early-access build. Portfolio values stay empty until you add your own holdings. Mutual-fund NAV search is sourced server-side from AMFI.</small></div><span className="betaTag">BETA</span></div>
 
@@ -93,7 +190,7 @@ function refreshFunds(){
 
  {active==='SIP Planner'&&<div className="card big"><h2>SIP Planner</h2><p>Build a monthly plan around your goal, horizon and risk comfort. Suggestions update dynamically from the live AMFI scheme list — they are a shortlist for consideration, not a buy instruction.</p>{selectedFund?<div className="selectedFund"><div><span className="pill green">Selected fund</span><h3>{selectedFund.name}</h3><small>{selectedFund.category}{selectedFund.amc?` · ${selectedFund.amc}`:''}{selectedFund.nav?` · NAV ₹${Number(selectedFund.nav).toLocaleString('en-IN')}`:''}</small></div><div className="selectedAnalytics"><span><b>5Y</b> {selectedAnalytics?.returns?.[5]!=null?selectedAnalytics.returns[5].toFixed(2)+'% CAGR':analyticsLoading?'Loading…':'—'}</span><span><b>7Y</b> {selectedAnalytics?.returns?.[7]!=null?selectedAnalytics.returns[7].toFixed(2)+'% CAGR':analyticsLoading?'Loading…':'—'}</span><span><b>10Y</b> {selectedAnalytics?.returns?.[10]!=null?selectedAnalytics.returns[10].toFixed(2)+'% CAGR':analyticsLoading?'Loading…':'—'}</span><span><b>Benchmark</b> {selectedAnalytics?.benchmark||'—'}</span><span><b>Risk-o-meter</b> {selectedAnalytics?.risk||'—'}</span><span><b>TER</b> {selectedAnalytics?.ter?.direct!=null?selectedAnalytics.ter.direct.toFixed(2)+'% Direct':analyticsLoading?'Loading…':'—'}</span></div><small className="mutedLine">{selectedAnalytics?.status==='live'?'Returns are calculated from AMFI historical NAVs. TER is the latest AMFI disclosure found for the AMC. Benchmark and Risk-o-meter are not shown until a scheme-specific disclosure is linked.':'WealthPilot shows only validated scheme-level data and does not invent missing returns, risk or cost data.'}</small><div className="selectedFundActions"><button className="secondary" onClick={async()=>{if(!selectedFund?.code)return;setAnalyticsLoading(true);try{const r=await fetch(`/api/fund-analytics?code=${encodeURIComponent(selectedFund.code)}&name=${encodeURIComponent(selectedFund.name)}&amc=${encodeURIComponent(selectedFund.amc||'')}&nav=${encodeURIComponent(selectedFund.nav||'')}`,{cache:'no-store'});setSelectedAnalytics(await r.json())}finally{setAnalyticsLoading(false)}}}>{analyticsLoading?'Refreshing analytics…':'Refresh analytics'}</button><button className="secondary" onClick={()=>{setSelectedFund(null);setSelectedAnalytics(null)}}>Change fund</button></div>{selectedAnalytics?.sources&&<div className="sourceLinks"><b>Official sources</b><a href={selectedAnalytics.sources.factsheets} target="_blank" rel="noreferrer">AMFI factsheets</a><a href={selectedAnalytics.sources.riskometer} target="_blank" rel="noreferrer">AMFI Risk-o-meter</a><a href={selectedAnalytics.sources.ter} target="_blank" rel="noreferrer">AMFI TER</a></div>}</div>:<div className="researchNote">Pick a fund from Fund Research to make the projection specific to that fund, or use the dynamic SIP allocation below.</div>}<div className="plannerMode"><button className={investmentMode==='monthly'?'sel':''} onClick={()=>setInvestmentMode('monthly')}>Monthly SIP</button><button className={investmentMode==='lumpsum'?'sel':''} onClick={()=>setInvestmentMode('lumpsum')}>One-time lump sum</button></div><label className="fieldLabel">{investmentMode==='monthly'?'Monthly investment':'One-time investment'}</label><input className="numberInput" type="number" min="500" step="500" value={projectionAmount} onChange={e=>setProjectionAmount(Math.max(0,Number(e.target.value)))}/><div className="bigmoney">{money(projectionAmount)} <small>{investmentMode==='monthly'?'/ month':'one time'}</small></div><label className="fieldLabel">Assumed annual return for projection: <b>{assumedReturn}%</b></label><input className="range" type="range" min="6" max="18" step="0.5" value={assumedReturn} onChange={e=>setAssumedReturn(Number(e.target.value))}/><small className="muted">AI uses this assumption only to illustrate possible compounding. Actual returns can be higher or lower.</small><ProjectionTable mode={investmentMode} amount={projectionAmount} rate={assumedReturn}/><div className="aiProjection"><span className="pill green">✦ AI view</span><b>At {assumedReturn}% assumed annual growth, {investmentMode==='monthly'?money(projectionAmount)+' per month':'a '+money(projectionAmount)+' lump sum'} could grow over time — but this is not a prediction or promise.</b><small>Before investing, verify the fund's latest factsheet, benchmark, risk level, expense ratio and current performance on the official/regulated platform.</small></div><div className="plannerSuggestHead"><div><h3>Dynamic SIP allocation</h3><p>WealthPilot adjusts the mix using your inputs and available live schemes.</p></div><button className="secondary" onClick={()=>setAllocationRefresh(x=>x+1)}>Refresh suggestions</button></div><div className="plannerControls"><label>Goal<select value={plannerGoal} onChange={e=>setPlannerGoal(e.target.value)}><option>Wealth creation</option><option>Retirement</option><option>Long-term goal</option><option>Capital preservation</option></select></label><label>Time horizon<select value={plannerHorizon} onChange={e=>setPlannerHorizon(e.target.value)}><option value="1-3">1–3 years</option><option value="3-5">3–5 years</option><option value="5-7">5–7 years</option><option value="7-10">7–10 years</option><option value="10+">10+ years</option></select></label><label>Risk comfort<select value={plannerRisk} onChange={e=>setPlannerRisk(e.target.value)}><option>Low</option><option>Moderate</option><option>High</option></select></label></div><input className="range" type="range" min="10000" max="200000" step="5000" value={amount} onChange={e=>setAmount(Number(e.target.value))}/><div className="bigmoney">{money(amount)} <small>/ month</small></div><div className="allocationMeta"><span>{allocation.length} suggested buckets</span><span>Goal: {plannerGoal}</span><span>Horizon: {plannerHorizon} yrs</span><span>Risk: {plannerRisk}</span></div>{allocation.map(x=><div className="alloc" key={x[0]}><span>{x[0]}<small>{x[2]}</small></span><b>{money(x[1])}</b><i style={{width:`${amount?x[1]/amount*100:0}%`}}/></div>)}<div className="researchNote"><b>How this works:</b> WealthPilot first chooses an allocation by risk, horizon and goal, then selects live AMFI schemes from different categories. It avoids making a performance claim when validated long-term return data is unavailable.</div></div>}
 
- {active==='Fund Research'&&<div className="card big"><div className="head"><div><span className="pill green">V7 data layer</span><h2>Fund Research</h2><p>NAV, returns, benchmark gap, risk and cost in one view.</p></div><button className="secondary" onClick={refreshFunds} disabled={refreshingFunds}>{refreshingFunds?'Refreshing…':'Refresh data'}</button></div><div className="researchNote">{fundStatus}. Live NAV is sourced server-side from AMFI. Returns, risk and scoring are shown only when validated data is available; WealthPilot does not treat NAV alone as a recommendation.</div><div className="researchToolbar"><input placeholder="Search fund, AMC or category…" value={fundSearch} onChange={e=>setFundSearch(e.target.value)}/><span>{filteredFunds.length} schemes returned</span></div><div className="fundgrid">{filteredFunds.slice(0,60).map(f=>{const a=analyticsForFund(f,dailyPulse);return <div className="fund" key={f.code}><span className="pill">{f.category||'Mutual Fund'}</span><h3>{f.name}</h3><p><b>{f.amc}</b><br/>Scheme code: <b>{f.code}</b><br/>NAV: <b>₹{Number(f.nav).toLocaleString('en-IN')}</b><br/>NAV date: <b>{f.navDate}</b><br/>ISIN: <b>{f.isin||'Not available'}</b></p><div className="analyticsMini"><div><small>Latest 1D</small><b className={a.daily==null?'muted':a.daily>=0?'up':'down'}>{a.daily==null?'—':`${a.daily>=0?'+':''}${a.daily.toFixed(2)}%`}</b></div><div><small>5Y / 7Y / 10Y</small><b className="muted">Not ingested</b></div><div><small>Benchmark</small><b className="muted">Not ingested</b></div><div><small>Risk / TER</small><b className="muted">Not ingested</b></div></div><div className="fundActions"><button className="secondary" onClick={()=>{setSelectedFund({name:f.name,category:f.category||'Mutual Fund',nav:f.nav,amc:f.amc,code:f.code});setProjectionAmount(5000);setInvestmentMode('monthly');setActive('SIP Planner')}}>Plan ₹5,000</button><button className="textBtn" onClick={()=>setSelectedFund({name:f.name,category:f.category||'Mutual Fund',nav:f.nav,amc:f.amc,code:f.code})}>View analytics →</button><button className="textBtn" onClick={()=>{setCompareFunds(prev=>prev.some(x=>x.code===f.code)?prev:prev.length<2?[...prev,{...f}]:[prev[1],{...f}]);setCompareAnalytics([])}}>{compareFunds.some(x=>x.code===f.code)?'Selected for compare ✓':'Compare'}</button></div></div>})}</div><div className="compareBar"><div><b>Compare funds</b><small>{compareFunds.length?compareFunds.map(x=>x.name.replace(/\s+-\s+(Direct|Regular) Plan.*$/i,'')).join('  vs  '):'Select up to 2 funds above'}</small></div><div className="compareActions"><button className="secondary" disabled={compareFunds.length!==2||compareLoading} onClick={async()=>{setCompareLoading(true);try{const data=await Promise.all(compareFunds.map(f=>fetch(`/api/fund-analytics?code=${encodeURIComponent(f.code)}&name=${encodeURIComponent(f.name)}&amc=${encodeURIComponent(f.amc||'')}&nav=${encodeURIComponent(f.nav||'')}`,{cache:'no-store'}).then(r=>r.json())));setCompareAnalytics(data)}finally{setCompareLoading(false)}}}>{compareLoading?'Analysing…':'Compare now'}</button><button className="textBtn" onClick={()=>{setCompareFunds([]);setCompareAnalytics([])}}>Clear</button></div></div>{compareAnalytics.length===2&&<FundComparison funds={compareFunds} analytics={compareAnalytics}/>}
+ {active==='Fund Research'&&<div className="card big"><div className="head"><div><span className="pill green">V7 data layer</span><h2>Fund Research</h2><p>NAV, returns, benchmark gap, risk and cost in one view.</p></div><button className="secondary" onClick={refreshFunds} disabled={refreshingFunds}>{refreshingFunds?'Refreshing…':'Refresh data'}</button></div><div className="researchNote">{fundStatus}. Live NAV is sourced server-side from AMFI. Returns, risk and scoring are shown only when validated data is available; WealthPilot does not treat NAV alone as a recommendation.</div><div className="researchToolbar"><input placeholder="Search fund, AMC or category…" value={fundSearch} onChange={e=>setFundSearch(e.target.value)}/><span>{filteredFunds.length} schemes returned</span></div><div className="fundgrid">{filteredFunds.slice(0,60).map(f=>{const a=analyticsForFund(f,dailyPulse);return <div className="fund" key={f.code}><span className="pill">{f.category||'Mutual Fund'}</span><h3>{f.name}</h3><p><b>{f.amc}</b><br/>Scheme code: <b>{f.code}</b><br/>NAV: <b>₹{Number(f.nav).toLocaleString('en-IN')}</b><br/>NAV date: <b>{f.navDate}</b><br/>ISIN: <b>{f.isin||'Not available'}</b></p><div className="analyticsMini"><div><small>Latest 1D</small><b className={a.daily==null?'muted':a.daily>=0?'up':'down'}>{a.daily==null?'—':`${a.daily>=0?'+':''}${a.daily.toFixed(2)}%`}</b></div><div><small>5Y / 7Y / 10Y</small><b className="muted">{a.returns.y5!=null||a.returns.y7!=null||a.returns.y10!=null?`${a.returns.y5!=null?a.returns.y5.toFixed(1)+'%':'—'} / ${a.returns.y7!=null?a.returns.y7.toFixed(1)+'%':'—'} / ${a.returns.y10!=null?a.returns.y10.toFixed(1)+'%':'—'}`:'—'}</b></div><div><small>Benchmark</small><b className={a.benchmark?'':'muted'}>{a.benchmark||'Not linked'}</b></div><div><small>Risk / TER</small><b className={a.risk||a.ter?.direct!=null?'':'muted'}>{a.risk||'Not linked'}{a.ter?.direct!=null?` · ${a.ter.direct.toFixed(2)}%`:' '}</b></div></div><div className="fundActions"><button className="secondary" onClick={()=>{setSelectedFund({name:f.name,category:f.category||'Mutual Fund',nav:f.nav,amc:f.amc,code:f.code});setProjectionAmount(5000);setInvestmentMode('monthly');setActive('SIP Planner')}}>Plan ₹5,000</button><button className="textBtn" onClick={()=>setSelectedFund({name:f.name,category:f.category||'Mutual Fund',nav:f.nav,amc:f.amc,code:f.code})}>View analytics →</button><button className="textBtn" onClick={()=>{setCompareFunds(prev=>prev.some(x=>x.code===f.code)?prev:prev.length<2?[...prev,{...f}]:[prev[1],{...f}]);setCompareAnalytics([])}}>{compareFunds.some(x=>x.code===f.code)?'Selected for compare ✓':'Compare'}</button></div></div>})}</div><div className="compareBar"><div><b>Compare funds</b><small>{compareFunds.length?compareFunds.map(x=>x.name.replace(/\s+-\s+(Direct|Regular) Plan.*$/i,'')).join('  vs  '):'Select up to 2 funds above'}</small></div><div className="compareActions"><button className="secondary" disabled={compareFunds.length!==2||compareLoading} onClick={async()=>{setCompareLoading(true);try{const data=await Promise.all(compareFunds.map(f=>fetch(`/api/fund-analytics?code=${encodeURIComponent(f.code)}&name=${encodeURIComponent(f.name)}&amc=${encodeURIComponent(f.amc||'')}&nav=${encodeURIComponent(f.nav||'')}`,{cache:'no-store'}).then(r=>r.json())));setCompareAnalytics(data)}finally{setCompareLoading(false)}}}>{compareLoading?'Analysing…':'Compare now'}</button><button className="textBtn" onClick={()=>{setCompareFunds([]);setCompareAnalytics([])}}>Clear</button></div></div>{compareAnalytics.length===2&&<FundComparison funds={compareFunds} analytics={compareAnalytics}/>}
  <div className="analyticsNote"><b>Analytics transparency:</b> Latest NAV is live from AMFI. Long-term returns are calculated from historical NAVs when available. Benchmark, Risk-o-meter and TER are shown only when a validated scheme-level source is available; WealthPilot does not invent missing fund metrics.</div><div className="sourceNote"><b>Official disclosure sources:</b> <a href="https://www.amfiindia.com/online-center/download-factsheets" target="_blank" rel="noreferrer">AMFI factsheets</a> · <a href="https://www.amfiindia.com/online-center/risk-o-meter" target="_blank" rel="noreferrer">AMFI Risk-o-meter</a> · <a href="https://www.amfiindia.com/ter-of-mf-schemes" target="_blank" rel="noreferrer">AMFI TER</a>. WealthPilot only populates scheme-level fields when it can match the official disclosure; otherwise it shows Not linked.</div></div>}
 
  {active==='Market Intelligence'&&<div className="card big"><h2>Market Intelligence</h2><p>The V7 engine is designed to combine official mutual-fund NAV data, fund performance, benchmark comparison, portfolio/risk data, macro signals and news before generating a recommendation.</p><div className="signals">{['NAV & history · AMFI latest and historical NAV','Fund performance · returns, drawdown and consistency','Benchmark · scheme vs benchmark performance','Portfolio · overlap, sector weights and concentration','Risk · volatility, downside and Risk-o-meter','Macro/news · rates, inflation, earnings and policy'].map(x=><div key={x}><span>●</span><b>{x}</b></div>)}</div>
@@ -159,7 +256,7 @@ function DashboardView({holdings,sips,totals,liveFunds,dailyPulse,setActive}:{ho
  const pulseStats=useMemo(()=>{const p=dailyPulse.filter(x=>Number.isFinite(Number(x.changePct)));if(!p.length)return {avg:0,up:0,down:0};return {avg:p.reduce((a,x)=>a+Number(x.changePct),0)/p.length,up:p.filter(x=>x.changePct>0).length,down:p.filter(x=>x.changePct<0).length}},[dailyPulse])
  const categoryCount=new Set(liveFunds.map(f=>f.category||'Mutual Fund')).size
  if(!holdings.length) return <div className="dashboardCockpit">
-   <div className="newUserHero card"><div><span className="pill green">✦ New to WealthPilot</span><h2>Your investing dashboard starts here.</h2><p>You haven't added any investments yet, so WealthPilot is not showing made-up portfolio values. Start with research, planning or the AI Fund Manager.</p><div className="newUserActions"><button className="primary" onClick={()=>setActive('AI Fund Manager')}>Ask AI Fund Manager →</button><button className="secondary" onClick={()=>setActive('Fund Research')}>Research funds</button><button className="secondary" onClick={()=>setActive('SIP Planner')}>Plan a SIP</button></div></div><div className="emptyOrb">✦<small>AI copilot</small></div></div>
+   <div className="newUserHero card"><div><span className="pill green">✦ New to WealthPilot</span><h2>Start with the amount you want to invest.</h2><p>Tell WealthPilot how much you have. We'll help you understand mutual funds, explore suitable funds and see how they have performed historically.</p><div className="newUserActions"><button className="secondary" onClick={()=>setActive('Fund Research')}>Explore funds →</button></div></div><div className="emptyOrb">₹<small>Your investment</small></div></div>
    <div className="dashboardGrid three">
     <div className="card dashboardCard"><div className="eyebrow">MARKET PULSE</div><h3>{pulseStats.avg>0?'🙂 Positive':'😐 Mixed'} today</h3><p>{dailyPulse.length?`${pulseStats.up} funds up · ${pulseStats.down} funds down in the latest available NAV sample.`:'Waiting for the latest available NAV sample.'}</p><button className="textBtn" onClick={()=>setActive('Market Intelligence')}>View market intelligence →</button></div>
     <div className="card dashboardCard"><div className="eyebrow">FUND UNIVERSE</div><h3>{liveFunds.length?liveFunds.length.toLocaleString('en-IN'):'—'} schemes</h3><p>{liveFunds.length?`${categoryCount} categories are currently represented in the live AMFI data loaded by WealthPilot.`:'Refresh Fund Research to load live AMFI data.'}</p><button className="textBtn" onClick={()=>setActive('Fund Research')}>Explore funds →</button></div>
@@ -202,12 +299,12 @@ function analyzePortfolio(holdings:Holding[]){
 }
 
 function AIFundManager({aiQuestion,setAiQuestion,aiCategory,setAiCategory,aiView,setAiView,setActive,liveFunds,holdings,totals,setSelectedFund,setProjectionAmount,setInvestmentMode}:{aiQuestion:string;setAiQuestion:any;aiCategory:string;setAiCategory:any;aiView:any;setAiView:any;setActive:any;liveFunds:any[];holdings:Holding[];totals:any;setSelectedFund:any;setProjectionAmount:any;setInvestmentMode:any}){
- const categories=[
-  {name:'Find a Fund',icon:'⌕',qs:['Which fund is suitable for my goal?','Compare two funds','Which fund has performed better over 7–10 years?','Which fund can diversify my portfolio?']},
-  {name:'Investment Planning',icon:'₹',qs:['I have ₹5,000 to invest. What should I consider?','Should I invest monthly or as a lump sum?','How much should I invest to reach my goal?','What could ₹5,000/month grow to in 5, 7 or 10 years?']},
-  {name:'Understand My Fund',icon:'◉',qs:['Why is my fund down?','Is this fund high or low risk?','How has my fund performed historically?','Should I continue my SIP or review it?']},
-  {name:'Learn',icon:'?',qs:['What is NAV?','What is CAGR?','SIP vs lump sum?','What does expense ratio mean?']}
- ]
+const categories=[
+  {name:'Find a Fund',icon:'⌕',qs:[]},
+  {name:'Investment Planning',icon:'₹',qs:[]},
+  {name:'Understand My Fund',icon:'◉',qs:[]},
+  {name:'Learn',icon:'?',qs:[]}
+]
  const run=(q:string)=>{
    setAiQuestion(q)
    const lower=q.toLowerCase()
@@ -249,3 +346,9 @@ function Metric(p:{l:string;v:string;d:string}){return <div className="card metr
 function Chart(){let min=Math.min(...chart),max=Math.max(...chart);let pts=chart.map((v,i)=>`${i/(chart.length-1)*100},${90-(v-min)/(max-min)*75}`).join(' ');return <div className="chart"><svg viewBox="0 0 100 100" preserveAspectRatio="none"><polyline points={pts} fill="none" stroke="currentColor" strokeWidth="1.8" vectorEffect="non-scaling-stroke"/></svg><div><span>12 mo ago</span><span>6 mo ago</span><span>Now</span></div></div>}
 
 function ProjectionTable({mode,amount,rate}:{mode:'monthly'|'lumpsum';amount:number;rate:number}){const years=[5,7,10];return <div className="projectionWrap"><div className="projectionHead"><div><h3>Estimated growth</h3><small>{mode==='monthly'?money(amount)+' invested every month':'One-time investment of '+money(amount)}</small></div><span>{rate}% assumed annual return</span></div><div className="projectionGrid">{years.map(y=>{const r=rate/100/12,n=y*12;const value=mode==='monthly'?(r===0?amount*n:amount*((Math.pow(1+r,n)-1)/r)):(amount*Math.pow(1+rate/100,y));const invested=mode==='monthly'?amount*n:amount;return <div className="projectionCard" key={y}><span>{y} years</span><strong>{money(value)}</strong><small>Invested {money(invested)}</small><em>Potential gain {money(value-invested)}</em></div>})}</div></div>}
+
+
+
+
+
+
