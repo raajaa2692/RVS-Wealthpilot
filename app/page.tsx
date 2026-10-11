@@ -258,15 +258,14 @@ function DashboardView({holdings,sips,totals,liveFunds,dailyPulse,setActive}:{ho
  if(!holdings.length) return <div className="dashboardCockpit">
    <div className="newUserHero card"><div><span className="pill green">✦ New to WealthPilot</span><h2>Start with the amount you want to invest.</h2><p>Tell WealthPilot how much you have. We'll help you understand mutual funds, explore suitable funds and see how they have performed historically.</p><div className="newUserActions"><button className="secondary" onClick={()=>setActive('Fund Research')}>Explore funds →</button></div></div><div className="emptyOrb">₹<small>Your investment</small></div></div>
    <div className="dashboardGrid three">
-    <div className="card dashboardCard"><div className="eyebrow">MARKET PULSE</div><h3>{pulseStats.avg>0?'🙂 Positive':'😐 Mixed'} today</h3><p>{dailyPulse.length?`${pulseStats.up} funds up · ${pulseStats.down} funds down in the latest available NAV sample.`:'Waiting for the latest available NAV sample.'}</p><button className="textBtn" onClick={()=>setActive('Market Intelligence')}>View market intelligence →</button></div>
+       <div className="card dashboardCard"><div className="eyebrow">MARKET PULSE</div><h3>{pulseStats.avg>0?'🙂 Positive':'😐 Mixed'} today</h3><p>{dailyPulse.length?`${pulseStats.up} funds up · ${pulseStats.down} funds down in the latest available NAV sample.`:'Waiting for the latest available NAV sample.'}</p></div>
     <div className="card dashboardCard"><div className="eyebrow">FUND UNIVERSE</div><h3>{liveFunds.length?liveFunds.length.toLocaleString('en-IN'):'—'} schemes</h3><p>{liveFunds.length?`${categoryCount} categories are currently represented in the live AMFI data loaded by WealthPilot.`:'Refresh Fund Research to load live AMFI data.'}</p><button className="textBtn" onClick={()=>setActive('Fund Research')}>Explore funds →</button></div>
-    <div className="card dashboardCard"><div className="eyebrow">AI FUND MANAGER</div><h3>Start with a question</h3><p>Compare funds, understand risk, plan a SIP or learn the basics in plain language.</p><button className="textBtn" onClick={()=>setActive('AI Fund Manager')}>Ask a question →</button></div>
+    
    </div>
    <div className="dashboardGrid two">
     <div className="card insightCard"><div className="eyebrow">✦ WEALTHPILOT INSIGHT</div><h3>There is nothing to analyse yet — and that's okay.</h3><p>Once you add holdings, WealthPilot can check fund concentration, category overlap, long-term consistency, benchmark performance, risk and costs.</p><div className="insightChecks"><span>✓ Concentration</span><span>✓ Fund overlap</span><span>✓ Risk</span><span>✓ Benchmark</span><span>✓ 5Y / 7Y / 10Y</span><span>✓ Expense ratio</span></div></div>
     <div className="card dashboardCard"><div className="eyebrow">🎯 THIS MONTH</div><h3>Build an investment plan</h3><p>Tell WealthPilot how much you want to invest, your horizon and risk comfort. Suggestions are for consideration, not an order.</p><button className="primary wide" onClick={()=>setActive('SIP Planner')}>Build my SIP plan →</button></div>
    </div>
-   <div className="card learnCard"><div><div className="eyebrow">🧠 30-SECOND LEARN</div><h3>Why CAGR matters</h3><p>CAGR shows an annualised growth rate over a period. It helps compare long-term growth, but it does not describe the path taken or guarantee future returns.</p></div><button className="secondary" onClick={()=>setActive('AI Fund Manager')}>Learn with AI →</button></div>
  </div>
  return <div className="dashboardCockpit">
    <div className="hero card"><div><span className="pill green">● AI view: Portfolio review</span><h2>Your portfolio is ready to review.</h2><p>WealthPilot can now analyse your allocation, performance, overlap and risk using the holdings you've added.</p></div><div className="health"><small>Portfolio health</small><strong>{analysis.score}</strong><span>{analysis.label}</span></div></div>
@@ -276,7 +275,7 @@ function DashboardView({holdings,sips,totals,liveFunds,dailyPulse,setActive}:{ho
     <div className="card dashboardCard"><div className="eyebrow">📈 YOUR FUNDS</div>{holdings.slice(0,4).map(h=><div className="holdingMini" key={h.name}><div><b>{h.name}</b><small>{h.category}</small></div><strong>{h.invested?`${((h.current-h.invested)/h.invested*100).toFixed(1)}%`:'—'}</strong></div>)}<button className="textBtn" onClick={()=>setActive('AI Fund Manager')}>Analyse my funds →</button></div>
    </div>
    <div className="dashboardGrid three">
-    <div className="card dashboardCard"><div className="eyebrow">MARKET PULSE</div><h3>{pulseStats.avg>0?'🙂 Positive':'😐 Mixed'} today</h3><p>{dailyPulse.length?`${pulseStats.up} up · ${pulseStats.down} down in latest NAV sample.`:'Latest NAV sample unavailable.'}</p><button className="textBtn" onClick={()=>setActive('Market Intelligence')}>View market →</button></div>
+        <div className="card dashboardCard"><div className="eyebrow">MARKET PULSE</div><h3>{pulseStats.avg>0?'🙂 Positive':'😐 Mixed'} today</h3><p>{dailyPulse.length?`${pulseStats.up} funds up · ${pulseStats.down} funds down in the latest available NAV sample.`:'Waiting for the latest available NAV sample.'}</p></div>
     <div className="card dashboardCard"><div className="eyebrow">🔔 NEXT SIP</div><h3>{sips.length?'Review your SIP schedule':'No SIP added'}</h3><p>{sips.length?'Your SIP reminders can be configured from My SIPs.':'Create a plan first, then add the SIP details you want to track.'}</p><button className="textBtn" onClick={()=>setActive(sips.length?'My SIPs':'SIP Planner')}>{sips.length?'View My SIPs →':'Plan a SIP →'}</button></div>
     <div className="card dashboardCard"><div className="eyebrow">🎯 THIS MONTH</div><h3>Review your plan</h3><p>Use your current amount, goal and risk comfort to generate a fresh shortlist.</p><button className="textBtn" onClick={()=>setActive('SIP Planner')}>Open SIP Planner →</button></div>
    </div>
@@ -346,6 +345,9 @@ function Metric(p:{l:string;v:string;d:string}){return <div className="card metr
 function Chart(){let min=Math.min(...chart),max=Math.max(...chart);let pts=chart.map((v,i)=>`${i/(chart.length-1)*100},${90-(v-min)/(max-min)*75}`).join(' ');return <div className="chart"><svg viewBox="0 0 100 100" preserveAspectRatio="none"><polyline points={pts} fill="none" stroke="currentColor" strokeWidth="1.8" vectorEffect="non-scaling-stroke"/></svg><div><span>12 mo ago</span><span>6 mo ago</span><span>Now</span></div></div>}
 
 function ProjectionTable({mode,amount,rate}:{mode:'monthly'|'lumpsum';amount:number;rate:number}){const years=[5,7,10];return <div className="projectionWrap"><div className="projectionHead"><div><h3>Estimated growth</h3><small>{mode==='monthly'?money(amount)+' invested every month':'One-time investment of '+money(amount)}</small></div><span>{rate}% assumed annual return</span></div><div className="projectionGrid">{years.map(y=>{const r=rate/100/12,n=y*12;const value=mode==='monthly'?(r===0?amount*n:amount*((Math.pow(1+r,n)-1)/r)):(amount*Math.pow(1+rate/100,y));const invested=mode==='monthly'?amount*n:amount;return <div className="projectionCard" key={y}><span>{y} years</span><strong>{money(value)}</strong><small>Invested {money(invested)}</small><em>Potential gain {money(value-invested)}</em></div>})}</div></div>}
+
+
+
 
 
 
